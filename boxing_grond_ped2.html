@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>สนามมวยแบบเป็ดๆ</title>
+  <style>
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/EXRLoader.js"></script>
+</head>
+<body>
+<script>
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+
+  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 100);
+  camera.position.set(0, 5, 10);
+
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  
+const exrSkyboxUrl = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/exr/1k/abandoned_workshop_1k.exr';  const pmremGenerator = new THREE.PMREMGenerator(renderer);
+  pmremGenerator.compileEquirectangularShader();
+
+  new THREE.EXRLoader()
+      .setDataType(THREE.UnsignedByteType)
+      .load(exrSkyboxUrl, (texture) => {
+          const skybox = pmremGenerator.fromEquirectangular(texture).texture;
+          scene.background = skybox;
+          scene.environment = skybox;
+
+          texture.dispose();
+          pmremGenerator.dispose();
+      }, undefined, (error) => {
+          console.error('Unable to load EXR skybox:', error);
+      });
+
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirLight.position.set(5, 10, 5);
+  dirLight.castShadow = true;
+  scene.add(dirLight);
+
+  const loader = new THREE.GLTFLoader();
+  loader.load('Boxing_show.glb', (gltf) => {
+    const model = gltf.scene;
+    scene.add(model);
+  }, undefined, (err) => {
+    console.error(' Boxing_show.glb error', err);
+  });
+ 
+  const toonMaterial = new THREE.MeshToonMaterial({ color: 0xff4757 });
+  const toonGeo = new THREE.SphereBufferGeometry(0.8, 32, 32);
+  const toonMesh = new THREE.Mesh(toonGeo, toonMaterial);
+  toonMesh.position.set(-2, 0.8, 2);
+  toonMesh.name = "CelShadedObject";
+  scene.add(toonMesh);
+
+  const uniforms = {
+    uTime: { value: 0.0 }
+  };
+
+  const vertexShader = `
+    uniform float uTime;
+    varying vec2 vUv;
+
+    void main() {
+      vUv = uv;
+      vec3 pos = position;
+      
+      pos.z += sin(pos.x * 4.0 + uTime * 3.0) * 0.15;
+      pos.y += cos(pos.z * 4.0 + uTime * 3.0) * 0.15;
+  
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+    }
+  `;
+
+  const fragmentShader = `
+    precision mediump float;
+    uniform float uTime;
+    varying vec2 vUv;
+
+    void main() {
+      vec3 color = vec3(vUv.x, vUv.y, abs(sin(uTime)));
+      gl_FragColor = vec4(color, 1.0);
+    }
+  `;
+
+  const shaderGeometry = new THREE.PlaneBufferGeometry(2, 2, 32, 32);
+  const shaderMaterial = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms,
+    side: THREE.DoubleSide
+  });
+
+  const shaderMesh = new THREE.Mesh(shaderGeometry, shaderMaterial);
+  shaderMesh.position.set(2, 1, 0);
+  shaderMesh.name = "VertexShaderObject";
+  scene.add(shaderMesh);
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  addEventListener('click', (event) => {
+    mouse.x = (event.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(event.clientY / innerHeight) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(scene.children, true);
+
+    if (intersects.length > 0) {
+      const clicked = intersects[0].object;
+      console.log('คลิกวัตถุ:', clicked.name);
+
+      clicked.scale.multiplyScalar(1.2);
+      setTimeout(() => {
+        clicked.scale.divideScalar(1.2);
+      }, 200);
+    }
+  });
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  });
+  function animate(time) {
+    uniforms.uTime.value = time * 0.001;
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+</script>
+</body>
+</html>
